@@ -15,6 +15,14 @@ export {
   type GeminiBackendResult,
 } from './gemini';
 
+// Kiro factory
+export {
+  createKiroBackend,
+  registerKiroAgent,
+  type KiroBackendOptions,
+  type KiroBackendResult,
+} from './kiro';
+
 // Future factories:
 // export { createCodexBackend, registerCodexAgent, type CodexBackendOptions } from './codex';
 // export { createClaudeBackend, registerClaudeAgent, type ClaudeBackendOptions } from './claude';
