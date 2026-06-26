@@ -76,8 +76,9 @@ export class KiroTransport implements TransportHandler {
   /**
    * Handle Kiro CLI stderr output.
    *
-   * Suppresses routine startup/info messages; surfaces errors as
-   * status messages when appropriate.
+   * Suppresses empty lines silently; other stderr content is logged
+   * but not forwarded to the user as an error message, since Kiro CLI
+   * may emit routine startup and diagnostic info on stderr.
    */
   handleStderr(text: string, _context: StderrContext): StderrResult {
     const trimmed = text.trim();

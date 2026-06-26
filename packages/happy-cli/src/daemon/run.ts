@@ -402,7 +402,13 @@ export async function startDaemon(): Promise<void> {
           // Construct command for the CLI
           const cliPath = join(projectPath(), 'dist', 'index.mjs');
           // Determine agent command - support claude, codex, gemini, openclaw, and kiro
-          const agent = options.agent === 'gemini' ? 'gemini' : (options.agent === 'codex' ? 'codex' : (options.agent === 'openclaw' ? 'openclaw' : (options.agent === 'kiro' ? 'kiro' : 'claude')));
+          const agentCommandMap: Record<string, string> = {
+            gemini: 'gemini',
+            codex: 'codex',
+            openclaw: 'openclaw',
+            kiro: 'kiro',
+          };
+          const agent = options.agent ? (agentCommandMap[options.agent] ?? 'claude') : 'claude';
           const resumeId = agent === 'claude'
             ? options.resumeClaudeSessionId
             : (agent === 'codex' ? options.resumeCodexThreadId : undefined);
