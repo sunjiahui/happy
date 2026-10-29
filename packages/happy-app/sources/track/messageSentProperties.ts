@@ -95,9 +95,9 @@ function messageSentTarget(metadata: Metadata | null | undefined): MessageSentTa
     return bot.systemKey === 'chief_of_staff' ? 'chief_of_staff' : 'bot';
 }
 
-export type MessageSentHarness = 'claude' | 'codex' | 'gemini' | 'agy' | 'opencode' | 'openclaw' | 'acp' | 'other';
+export type MessageSentHarness = 'claude' | 'codex' | 'gemini' | 'agy' | 'kiro' | 'opencode' | 'openclaw' | 'acp' | 'other';
 
-const CLI_HARNESSES = new Set<string>(['claude', 'codex', 'gemini', 'agy', 'opencode', 'openclaw', 'acp']);
+const CLI_HARNESSES = new Set<string>(['claude', 'codex', 'gemini', 'agy', 'kiro', 'opencode', 'openclaw', 'acp']);
 
 /**
  * Which agent a Happy CLI session runs, a phone-only extra. Happy Agent sessions

@@ -32,11 +32,20 @@ public final class NewSessionComposer {
     private var needsRefresh = false
     private var worktreeTarget: WorktreeTarget?
     private var worktreeTask: Task<Void, Never>?
+    private var modelCatalogTask: Task<Void, Never>?
+    private var modelCatalogTarget: ModelCatalogTarget?
+    private var modelCatalog: AgentModelCatalog?
 
     /// Where git worktrees are listed: a Happy CLI machine and a directory.
     struct WorktreeTarget: Equatable {
         var machineId: String
         var path: String
+    }
+
+    struct ModelCatalogTarget: Equatable {
+        var machineId: String
+        var agent: String
+        var path: String?
     }
 
     public convenience init(drafts: NewSessionDraftStore, snapshot: HomeSnapshot, ops: any HomeOps) {
@@ -71,6 +80,7 @@ public final class NewSessionComposer {
     deinit {
         refreshTask?.cancel()
         worktreeTask?.cancel()
+        modelCatalogTask?.cancel()
     }
 
     public func update(snapshot: HomeSnapshot) {
@@ -249,12 +259,13 @@ public final class NewSessionComposer {
         let draft = drafts.draft
         let createsBot = drafts.createsBot
         let worktrees = gitWorktrees
+        let modelCatalog = modelCatalog
         let deriver = self.deriver
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
             guard !Task.isCancelled else { return }
             let next = await deriver.choices(snapshot: snapshot, revision: revision, generation: generation, draft: draft,
-                                             createsBot: createsBot, worktrees: worktrees)
+                                             createsBot: createsBot, worktrees: worktrees, modelCatalog: modelCatalog)
             guard !Task.isCancelled, let next, let self, self.refreshGeneration == generation else { return }
             self.canonicalSessions = next.sessions
             if next.revision != self.appliedChoiceRevision {
@@ -276,6 +287,8 @@ public final class NewSessionComposer {
             }
             guard self.refreshGeneration == generation else { return }
             self.updateWorktreeTarget()
+            guard self.refreshGeneration == generation else { return }
+            self.updateModelCatalogTarget()
             guard self.refreshGeneration == generation else { return }
             if self.pendingChoiceChange || self.pendingDraftChange {
                 self.pendingChoiceChange = false
@@ -336,6 +349,42 @@ public final class NewSessionComposer {
             guard !Task.isCancelled, let self, self.worktreeTarget == target else { return }
             guard entries != self.gitWorktrees else { return }
             self.gitWorktrees = entries
+            self.refresh()
+        }
+    }
+
+    private func updateModelCatalogTarget() {
+        guard let choice = MachineChoice.find(in: MachineChoice.collect(snapshot.machines.machines), machineId: drafts.draft.selectedMachineId),
+              let machine = choice.happyMachine else {
+            setModelCatalogTarget(nil)
+            return
+        }
+        let agent = choices.resolvedAgent.rawValue
+        guard agent == "codex" || agent == "claude" || agent == "kiro" else {
+            setModelCatalogTarget(nil)
+            return
+        }
+        let path = agent == "kiro" ? choices.resolvedPath : nil
+        setModelCatalogTarget(ModelCatalogTarget(machineId: machine.id, agent: agent, path: path))
+    }
+
+    private func setModelCatalogTarget(_ target: ModelCatalogTarget?) {
+        guard target != modelCatalogTarget else { return }
+        modelCatalogTarget = target
+        modelCatalogTask?.cancel()
+        modelCatalog = nil
+        guard let target else { return }
+        let ops = ops
+        modelCatalogTask = Task { [weak self] in
+            let result = await ops.machineListAgentModels(
+                machineId: target.machineId,
+                agent: target.agent,
+                workingDirectory: target.path,
+                forceRefresh: false
+            )
+            guard !Task.isCancelled, let self, self.modelCatalogTarget == target else { return }
+            guard case .success(let catalog) = result else { return }
+            self.modelCatalog = catalog
             self.refresh()
         }
     }

@@ -564,6 +564,12 @@ export class AcpBackend implements AgentBackend {
         sessionUpdate: async (params: SessionNotification) => {
           this.handleSessionUpdate(params);
         },
+        // ACP agents may publish private informational notifications (for
+        // example Kiro's command and MCP status updates). They require no
+        // response; accepting them avoids noisy method-not-found replies.
+        extNotification: async (method: string) => {
+          logger.debug(`[AcpBackend] Ignoring extension notification: ${method}`);
+        },
         requestPermission: async (params: RequestPermissionRequest): Promise<RequestPermissionResponse> => {
           
           const extendedParams = params as ExtendedRequestPermissionRequest;
@@ -599,8 +605,9 @@ export class AcpBackend implements AgentBackend {
           
           const options = extendedParams.options || [];
           
-          // Log permission request for debugging (include full params to understand structure)
-          logger.debug(`[AcpBackend] Permission request: tool=${toolName}, toolCallId=${toolCallId}, input=`, JSON.stringify(input));
+          // Permission arguments can contain source, commands, or credentials.
+          // Record only the category and structural shape.
+          logger.debug(`[AcpBackend] Permission request: tool=${toolName}, toolCallId=${toolCallId}`);
           logger.debug(`[AcpBackend] Permission request params structure:`, JSON.stringify({
             hasToolCall: !!toolCall,
             toolCallKind: toolCall?.kind,
@@ -695,12 +702,28 @@ export class AcpBackend implements AgentBackend {
             }
           }
           
-          // Auto-approve with 'proceed_once' if no permission handler
-          // optionId must match one from the request options (e.g., 'proceed_once', 'proceed_always', 'cancel')
+          // Autonomous ACP agents (currently Kiro) prefer a session-wide
+          // approval. The provider and OS can still reject the operation.
+          const proceedAlwaysOption = options.find((opt) =>
+            opt.optionId === 'proceed_always' || (typeof opt.name === 'string' && opt.name.toLowerCase().includes('always'))
+          );
           const proceedOnceOption = options.find((opt) => 
             opt.optionId === 'proceed_once' || (typeof opt.name === 'string' && opt.name.toLowerCase().includes('once'))
           );
-          const defaultOptionId = proceedOnceOption?.optionId || (options.length > 0 && options[0].optionId ? options[0].optionId : 'proceed_once');
+          const safeProceedOption = options.find((opt) => {
+            const text = `${opt.optionId ?? ''} ${opt.name ?? ''}`.toLowerCase();
+            return !text.includes('cancel') && !text.includes('deny') && !text.includes('reject');
+          });
+          const defaultOptionId = proceedAlwaysOption?.optionId
+            || proceedOnceOption?.optionId
+            || safeProceedOption?.optionId
+            || 'proceed_once';
+          this.emit({
+            type: 'tool-result',
+            toolName,
+            result: { status: 'approved', decision: proceedAlwaysOption ? 'approved_for_session' : 'approved' },
+            callId: permissionId,
+          });
           return { outcome: { outcome: 'selected', optionId: defaultOptionId } };
         },
       };

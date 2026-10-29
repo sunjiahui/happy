@@ -39,4 +39,15 @@ describe('daemon spawn mode arguments', () => {
     expect(shouldForwardDaemonPermissionMode('codex', 'default')).toBe(true);
     expect(shouldForwardDaemonPermissionMode('claude', 'default')).toBe(false);
   });
+
+  it('forwards Kiro model and effort without a Happy permission override', () => {
+    const args: string[] = [];
+    appendDaemonSpawnModeArgs(args, {
+      directory: '/repo',
+      permissionMode: 'autonomous',
+      modelMode: 'claude-sonnet-5.5',
+      effortLevel: 'high',
+    }, 'kiro');
+    expect(args).toEqual(['--model', 'claude-sonnet-5.5', '--effort', 'high']);
+  });
 });

@@ -79,6 +79,7 @@ import {
 } from '@/utils/newSessionPickerInteraction';
 import { getCodeAgentDefaults, resolveAgentDefaultConfig, retireModelMode } from '@/sync/agentDefaults';
 import { delay } from '@/utils/time';
+import { loadAgentModelCatalog, type MachineAgentModelCatalog } from '@/sync/agentModelCatalog';
 import {
     buildRigSpawnConfiguration,
     getRigMachineSessionCreation,
@@ -112,6 +113,7 @@ const agentIcons = {
     openclaw: require('@/assets/images/icon-openclaw.png'),
     gemini: require('@/assets/images/icon-gemini.png'),
     agy: require('@/assets/images/icon-agy.png'),
+    kiro: require('@/assets/images/icon-monochrome.png'),
 };
 
 type AgentKey = NewSessionAgentType;
@@ -121,6 +123,7 @@ const ALL_AGENTS: { key: AgentKey; label: string }[] = [
     { key: 'claude', label: 'claude code' },
     { key: 'codex', label: 'codex' },
     { key: 'agy', label: 'antigravity' },
+    { key: 'kiro', label: 'kiro' },
     { key: 'rig', label: 'happy' },
 ];
 
@@ -912,6 +915,41 @@ function NewSessionScreen() {
         ?? (selectedAgent === 'rig' ? false : getSupportsWorktree(selectedAgent));
     const selectedHomeDir = selectedChoice?.happyMachine?.metadata?.homeDir
         ?? selectedChoice?.rigMachine?.metadata?.homeDir;
+    const catalogWorkingDirectory = selectedPath
+        ? resolveAbsolutePath(selectedPath, selectedHomeDir)
+        : undefined;
+    const [machineCatalog, setMachineCatalog] = React.useState<{
+        key: string;
+        catalog: MachineAgentModelCatalog | null;
+        failed: boolean;
+    } | null>(null);
+    const [catalogRefreshRequest, setCatalogRefreshRequest] = React.useState<{ key: string; nonce: number } | null>(null);
+    const catalogKey = `${selectedMachine?.id ?? ''}:${selectedAgent}:${catalogWorkingDirectory ?? ''}`;
+
+    React.useEffect(() => {
+        let cancelled = false;
+        if (!selectedMachine || selectedAgent === 'rig' || (selectedAgent === 'kiro' && !catalogWorkingDirectory)) {
+            setMachineCatalog(null);
+            return () => { cancelled = true; };
+        }
+        setMachineCatalog({ key: catalogKey, catalog: null, failed: false });
+        void loadAgentModelCatalog({
+            machineId: selectedMachine.id,
+            agent: selectedAgent,
+            workingDirectory: catalogWorkingDirectory,
+            forceRefresh: catalogRefreshRequest?.key === catalogKey,
+        }).then((result) => {
+            if (cancelled) return;
+            setMachineCatalog({
+                key: catalogKey,
+                catalog: result?.ok ? result.catalog : null,
+                failed: result !== null && !result.ok,
+            });
+        }).catch(() => {
+            if (!cancelled) setMachineCatalog({ key: catalogKey, catalog: null, failed: true });
+        });
+        return () => { cancelled = true; };
+    }, [catalogKey, catalogRefreshRequest, catalogWorkingDirectory, selectedAgent, selectedMachine]);
 
     // Build machine picker items: online first, then offline
     const machineItems = React.useMemo<PickerItem[]>(() => {
@@ -1111,14 +1149,33 @@ function NewSessionScreen() {
             effortLevel: rigCreation.defaultEffortForModel(rigCreation.defaultModelKey),
         }
         : resolveAgentDefaultConfig(agentDefaultOverrides, selectedAgent, happyCliVersion), [agentDefaultOverrides, happyCliVersion, selectedAgent, rigCreation]);
-    const modelModes = React.useMemo<ModelMode[]>(
-        () => rigCreation?.models ?? includeConfiguredModel(
-            selectedAgent,
-            getHardcodedModelModes(selectedAgent, t),
-            effectiveAgentDefaults.modelMode,
-        ),
-        [selectedAgent, effectiveAgentDefaults.modelMode, rigCreation],
-    );
+    const activeMachineCatalog = machineCatalog?.key === catalogKey ? machineCatalog.catalog : null;
+    const didMachineCatalogFail = machineCatalog?.key === catalogKey && machineCatalog.failed;
+    const modelModes = React.useMemo<ModelMode[]>(() => {
+        if (rigCreation) return rigCreation.models;
+        const discovered = activeMachineCatalog?.models.map((model) => ({
+            key: model.id,
+            name: model.name,
+            description: model.description ?? null,
+        }));
+        const base = discovered && discovered.length > 0
+            ? discovered
+            : getHardcodedModelModes(selectedAgent, t);
+        const configured = draft.modelMode ?? effectiveAgentDefaults.modelMode;
+        const withConfigured = includeConfiguredModel(selectedAgent, base, configured);
+        if (
+            configured
+            && configured !== 'default'
+            && (selectedAgent === 'codex' || selectedAgent === 'kiro')
+            && discovered
+            && !discovered.some((model) => model.key === configured)
+        ) {
+            return withConfigured.map((model) => model.key === configured
+                ? { ...model, disabled: true, description: 'Unavailable on this computer' }
+                : model);
+        }
+        return withConfigured;
+    }, [activeMachineCatalog, draft.modelMode, effectiveAgentDefaults.modelMode, rigCreation, selectedAgent]);
 
     const currentModel = resolveSelectedOption(modelModes, modelIndex);
     const currentModelKey = currentModel?.key ?? 'default';
@@ -1126,10 +1183,12 @@ function NewSessionScreen() {
     const effortLevels = React.useMemo<EffortLevel[]>(
         () => rigCreation
             ? rigCreation.effortsForModel(currentModelKey).map((key) => ({ key, name: key }))
-            : getEffortLevelsForModel(selectedAgent, currentModelKey),
-        [selectedAgent, currentModelKey, rigCreation],
+            : (activeMachineCatalog?.effort?.options.map((option) => ({ key: option.id, name: option.name }))
+                ?? getEffortLevelsForModel(selectedAgent, currentModelKey)),
+        [activeMachineCatalog, selectedAgent, currentModelKey, rigCreation],
     );
     const effectiveEffortDefault = rigCreation?.defaultEffortForModel(currentModelKey)
+        ?? activeMachineCatalog?.effort?.defaultOptionId
         ?? effectiveAgentDefaults.effortLevel;
     const showModel = modelModes.length > 1;
     const showEffort = effortLevels.length > 0;
@@ -1740,7 +1799,7 @@ function NewSessionScreen() {
         }
     }, [agentWorkspaces, allMachines, canPickWorktree, currentEffort?.key, currentModelKey, currentPermission?.key, draftProjectId, effectiveAgentDefaults.effortLevel, effectiveAgentDefaults.modelMode, effectiveAgentDefaults.permissionMode, navigateToSession, picksWorkspaces, router, selectedAgent, selectedMachineId, selectedPath, selectedProjectId, worktreeKey]);
 
-    const canSend = selectedMachineId && selectedMachine && isMachineOnline(selectedMachine) && !isSpawning;
+    const canSend = selectedMachineId && selectedMachine && isMachineOnline(selectedMachine) && !isSpawning && !currentModel?.disabled;
     React.useEffect(() => {
         if (
             autoSubmit !== '1'
@@ -2014,6 +2073,19 @@ function NewSessionScreen() {
                                 <Ionicons name="chevron-down" size={13} color={theme.colors.textSecondary} />
                             </BubblePressable>
                             {renderActivePickerPopover('path')}
+
+                            {didMachineCatalogFail && (
+                                <BubblePressable
+                                    scaleFeedback={false}
+                                    style={(p) => [styles.configRow, p.pressed && styles.configRowPressed]}
+                                    onPress={() => setCatalogRefreshRequest({ key: catalogKey, nonce: Date.now() })}
+                                >
+                                    <Ionicons name="refresh-outline" size={15} color={theme.colors.textSecondary} />
+                                    <Text style={[styles.configLabel, styles.configValueText]} numberOfLines={1}>
+                                        Model list unavailable — retry
+                                    </Text>
+                                </BubblePressable>
+                            )}
 
                             {!isNativeMobile && (
                                 <>

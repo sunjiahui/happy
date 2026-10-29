@@ -764,6 +764,43 @@ export class CodexAppServerClient {
         await this.disconnectInternal();
     }
 
+    /**
+     * Lists every model visible to the current Codex account. The app-server
+     * endpoint is cursor based, so callers get one stable, first-seen-ordered
+     * array rather than needing to understand its pagination protocol.
+     */
+    async listModels(): Promise<unknown[]> {
+        const models: unknown[] = [];
+        const seenCursors = new Set<string>();
+        let cursor: string | null = null;
+
+        for (let page = 0; page < 20; page++) {
+            const result = await this.request('model/list', {
+                cursor,
+                limit: 100,
+                includeHidden: false,
+            }) as Record<string, unknown>;
+            const rows = Array.isArray(result.data)
+                ? result.data
+                : (Array.isArray(result.models) ? result.models : []);
+            models.push(...rows);
+
+            const nextCursor = typeof result.nextCursor === 'string'
+                ? result.nextCursor
+                : (typeof result.next_cursor === 'string' ? result.next_cursor : null);
+            if (!nextCursor) {
+                return models;
+            }
+            if (seenCursors.has(nextCursor)) {
+                throw new Error('model/list returned a repeated cursor');
+            }
+            seenCursors.add(nextCursor);
+            cursor = nextCursor;
+        }
+
+        throw new Error('model/list exceeded the 20 page limit');
+    }
+
     private buildThreadConfig(mcpServers?: Record<string, unknown>): Record<string, unknown> | null {
         return mcpServers ? { mcp_servers: mcpServers } : null;
     }

@@ -18,16 +18,17 @@ describe('harness catalog', () => {
 
     it('lists only installed harnesses, in pick order', () => {
         const harnesses = listAvailableHarnesses({
-            availability: { claude: true, codex: true, agy: true },
+            availability: { claude: true, codex: true, agy: true, kiro: true },
             happyAgentAvailable: true,
             selected: 'claude',
         });
 
-        expect(harnesses.map((harness) => harness.key)).toEqual(['claude', 'codex', 'agy', 'rig']);
+        expect(harnesses.map((harness) => harness.key)).toEqual(['claude', 'codex', 'agy', 'kiro', 'rig']);
         expect(harnesses.map((harness) => harness.name)).toEqual([
             'Claude Code',
             'Codex',
             'Antigravity',
+            'Kiro',
             'Happy',
         ]);
     });
@@ -91,6 +92,19 @@ describe('harness catalog', () => {
             happyAgentAvailable: false,
             selected: 'agy',
         }).map((harness) => harness.key)).toEqual(['claude', 'codex']);
+    });
+
+    it('never lists Kiro without an explicit installation report', () => {
+        expect(listAvailableHarnesses({
+            availability: { claude: true, kiro: false },
+            happyAgentAvailable: false,
+            selected: 'kiro',
+        }).map((harness) => harness.key)).toEqual(['claude']);
+        expect(listAvailableHarnesses({
+            availability: { claude: true, kiro: true },
+            happyAgentAvailable: false,
+            selected: 'claude',
+        }).map((harness) => harness.key)).toEqual(['claude', 'kiro']);
     });
 
     it('falls back to the whole catalog when a machine reports no capabilities', () => {

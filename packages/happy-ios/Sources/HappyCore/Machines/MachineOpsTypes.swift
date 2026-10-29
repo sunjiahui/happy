@@ -20,7 +20,7 @@ public struct SpawnSessionOptions: Sendable, Equatable {
     public var approvedNewDirectoryCreation = false
     /// `token`, sent to CLI flavor agents only.
     public var token: String?
-    /// `agent`: claude, codex, gemini, openclaw, agy or rig.
+    /// `agent`: claude, codex, gemini, openclaw, agy, kiro or rig.
     public var agent: String?
     /// `permissionMode`, sent to either harness.
     public var permissionMode: String?
@@ -54,6 +54,61 @@ public struct SpawnSessionOptions: Sendable, Equatable {
         self.directory = directory
         self.agent = agent
     }
+}
+
+/// The normalized encrypted `list-agent-models` machine RPC result.
+public struct AgentModelCatalog: Sendable, Equatable {
+    public struct Model: Sendable, Equatable {
+        public var id: String
+        public var name: String
+        public var description: String?
+        public var isDefault: Bool
+
+        public init(id: String, name: String, description: String? = nil, isDefault: Bool = false) {
+            self.id = id
+            self.name = name
+            self.description = description
+            self.isDefault = isDefault
+        }
+    }
+    public struct Option: Sendable, Equatable {
+        public var id: String
+        public var name: String
+
+        public init(id: String, name: String) {
+            self.id = id
+            self.name = name
+        }
+    }
+    public struct Effort: Sendable, Equatable {
+        public var selectorId: String
+        public var options: [Option]
+        public var defaultOptionId: String?
+
+        public init(selectorId: String, options: [Option], defaultOptionId: String? = nil) {
+            self.selectorId = selectorId
+            self.options = options
+            self.defaultOptionId = defaultOptionId
+        }
+    }
+    public var agent: String
+    public var source: String
+    public var fetchedAt: Int64
+    public var models: [Model]
+    public var effort: Effort?
+
+    public init(agent: String, source: String, fetchedAt: Int64, models: [Model], effort: Effort? = nil) {
+        self.agent = agent
+        self.source = source
+        self.fetchedAt = fetchedAt
+        self.models = models
+        self.effort = effort
+    }
+}
+
+public enum AgentModelCatalogResult: Sendable, Equatable {
+    case success(AgentModelCatalog)
+    case error(code: String, retryable: Bool)
 }
 
 /// ops.ts ClaudeForkSessionOptions, addressed to the machine holding the JSONL.

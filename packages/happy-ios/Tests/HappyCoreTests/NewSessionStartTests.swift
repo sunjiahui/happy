@@ -1309,6 +1309,36 @@ final class NewSessionChoicesTests: XCTestCase {
         XCTAssertFalse(choices.supportsBots)
     }
 
+    func testKiroUsesTheMachineModelCatalogAndRejectsAStaleSelection() {
+        let choices = NewSessionChoices(.init(
+            draft: NewSessionDraft(
+                selectedMachineId: "m1", selectedPath: "/Users/steve/happy",
+                agentType: .kiro, modelMode: "stale-model", effortLevel: "high"
+            ),
+            machines: [machine("m1", metadata: ["cliAvailability": .object(["kiro": .bool(true)])])],
+            sessions: [],
+            agentModelCatalog: AgentModelCatalog(
+                agent: "kiro", source: "kiro-acp", fetchedAt: 1,
+                models: [
+                    .init(id: "auto", name: "Auto", isDefault: true),
+                    .init(id: "claude-sonnet", name: "Claude Sonnet"),
+                ],
+                effort: .init(
+                    selectorId: "thought_level",
+                    options: [.init(id: "low", name: "Low"), .init(id: "high", name: "High")],
+                    defaultOptionId: "low"
+                )
+            )
+        ))
+        XCTAssertEqual(choices.currentAgent.key, "kiro")
+        XCTAssertEqual(choices.modelOptions.map(\.key), ["auto", "claude-sonnet", "stale-model"])
+        XCTAssertEqual(choices.currentModel?.key, "stale-model")
+        XCTAssertTrue(choices.currentModel?.isDisabled == true)
+        XCTAssertEqual(choices.effortOptions.map(\.key), ["low", "high"])
+        XCTAssertEqual(choices.currentEffort?.key, "high")
+        XCTAssertEqual(choices.currentPermission?.key, "autonomous")
+    }
+
     func testGitWorktreesAreOfferedByBranch() {
         let choices = NewSessionChoices(.init(
             draft: NewSessionDraft(selectedMachineId: "m1", selectedPath: "~/happy", sessionType: .worktree, worktreeKey: "/Users/steve/happy/.dev/worktree/calm-star"),

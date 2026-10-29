@@ -240,6 +240,7 @@ enum AvatarImages {
         case .claude: UIImage.happy("icon-claude")
         case .codex: UIImage.happy("icon-gpt")
         case .agy: UIImage.happy("icon-agy")
+        case .kiro: UIImage.happy("logo-black")
         case .rig: UIImage.happy("logo-black")
         }
     }

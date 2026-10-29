@@ -269,6 +269,7 @@ function formatEnvelopeForServerLog(agentName: string, envelope: SessionEnvelope
 type AcpSwitchMode = {
   permissionMode?: string;
   model?: string | null;
+  effort?: string | null;
 };
 
 type AcpSelectableOption = {
@@ -321,7 +322,7 @@ function flattenSelectOptions(options: unknown): AcpSelectableOption[] {
 
 function extractConfigSelector(
   configOptions: SessionConfigOption[],
-  category: 'mode' | 'model',
+  category: 'mode' | 'model' | 'thought_level',
 ): AcpConfigSelector | null {
   const optionMatchesCategory = (option: SessionConfigOption): boolean => {
     if (option.category === category) {
@@ -332,6 +333,9 @@ function extractConfigSelector(
     const name = normalizeComparable(option.name);
     if (category === 'model') {
       return id.includes('model') || name.includes('model');
+    }
+    if (category === 'thought_level') {
+      return id.includes('thought') || id.includes('effort') || name.includes('thought') || name.includes('effort');
     }
     return id.includes('mode') || id.includes('permission') || name.includes('mode') || name.includes('permission');
   };
@@ -436,12 +440,15 @@ type PendingTurn = {
   timeout: NodeJS.Timeout;
 };
 
-function resolveSessionFlavor(agentName: string): 'gemini' | 'opencode' | 'acp' {
+function resolveSessionFlavor(agentName: string): 'gemini' | 'opencode' | 'kiro' | 'acp' {
   if (agentName === 'gemini') {
     return 'gemini';
   }
   if (agentName === 'opencode') {
     return 'opencode';
+  }
+  if (agentName === 'kiro') {
+    return 'kiro';
   }
   return 'acp';
 }
@@ -453,6 +460,8 @@ export async function runAcp(opts: {
   args: string[];
   startedBy?: 'daemon' | 'terminal';
   verbose?: boolean;
+  initialModel?: string;
+  initialEffort?: string;
 }): Promise<void> {
   const verbose = opts.verbose === true;
   const sessionTag = randomUUID();
@@ -519,9 +528,11 @@ export async function runAcp(opts: {
   const sessionManager = new AcpSessionManager();
   const messageQueue = new MessageQueue2<AcpSwitchMode>((mode) => hashObject(mode));
   let currentPermissionMode: string | undefined;
-  let currentModel: string | null | undefined;
+  let currentModel: string | null | undefined = opts.initialModel;
+  let currentEffort: string | null | undefined = opts.initialEffort;
   let modeSelector: AcpConfigSelector | null = null;
   let modelSelector: AcpConfigSelector | null = null;
+  let thoughtLevelSelector: AcpConfigSelector | null = null;
   let legacyModes: SessionModeState | null = null;
   let legacyModels: SessionModelState | null = null;
   let sawSlashCommands = false;
@@ -542,7 +553,9 @@ export async function runAcp(opts: {
     command: opts.command,
     args: opts.args,
     mcpServers,
-    permissionHandler,
+    // Kiro is intentionally autonomous in Happy: its own sandbox and OS
+    // boundaries still apply, but Happy does not add a mobile approval hop.
+    permissionHandler: opts.agentName === 'kiro' ? undefined : permissionHandler,
     transportHandler: new DefaultTransport(opts.agentName),
     verbose,
   });
@@ -650,6 +663,7 @@ export async function runAcp(opts: {
     if (modelSelector) {
       const resolved = resolveRequestedCode(modelSelector.options, requestedModel);
       if (!resolved) {
+        if (opts.agentName === 'kiro') throw new Error(`Kiro model is unavailable: ${requestedModel}`);
         logger.debug(`[${opts.agentName}] Ignoring unknown ACP model request: ${requestedModel}`);
         return;
       }
@@ -661,14 +675,17 @@ export async function runAcp(opts: {
         modelSelector.currentCode = resolved;
         return;
       }
+      if (opts.agentName === 'kiro') throw new Error(`Kiro rejected model: ${requestedModel}`);
     }
 
     if (!legacyModels) {
+      if (opts.agentName === 'kiro') throw new Error(`Kiro did not publish a model selector for: ${requestedModel}`);
       return;
     }
 
     const resolvedLegacyModel = resolveRequestedLegacyModelCode(legacyModels, requestedModel);
     if (!resolvedLegacyModel) {
+      if (opts.agentName === 'kiro') throw new Error(`Kiro model is unavailable: ${requestedModel}`);
       logger.debug(`[${opts.agentName}] Ignoring unknown ACP legacy model request: ${requestedModel}`);
       return;
     }
@@ -682,7 +699,26 @@ export async function runAcp(opts: {
         ...legacyModels,
         currentModelId: resolvedLegacyModel,
       };
+      return;
     }
+    if (opts.agentName === 'kiro') throw new Error(`Kiro rejected model: ${requestedModel}`);
+  };
+
+  const switchEffortIfRequested = async (requestedEffort: string): Promise<void> => {
+    if (!requestedEffort) return;
+    if (!thoughtLevelSelector) {
+      if (opts.agentName === 'kiro') throw new Error(`Kiro did not publish an effort selector for: ${requestedEffort}`);
+      return;
+    }
+    const resolved = resolveRequestedCode(thoughtLevelSelector.options, requestedEffort);
+    if (!resolved) {
+      if (opts.agentName === 'kiro') throw new Error(`Kiro effort is unavailable: ${requestedEffort}`);
+      return;
+    }
+    if (resolved === thoughtLevelSelector.currentCode) return;
+    const switched = await backend.setSessionConfigOption(thoughtLevelSelector.configId, resolved);
+    if (!switched && opts.agentName === 'kiro') throw new Error(`Kiro rejected effort: ${requestedEffort}`);
+    if (switched) thoughtLevelSelector.currentCode = resolved;
   };
 
   const onBackendMessage = (msg: AgentMessage) => {
@@ -723,6 +759,7 @@ export async function runAcp(opts: {
 
         modeSelector = extractConfigSelector(configOptions, 'mode');
         modelSelector = extractConfigSelector(configOptions, 'model');
+        thoughtLevelSelector = extractConfigSelector(configOptions, 'thought_level');
         if (verbose) {
           if (modeSelector) {
             sawModes = true;
@@ -855,10 +892,15 @@ export async function runAcp(opts: {
       currentModel = message.meta.model ?? null;
       logger.debug(`[${opts.agentName}] Requested ACP model: ${currentModel ?? 'null'}`);
     }
+    if (message.meta && Object.prototype.hasOwnProperty.call(message.meta, 'effort')) {
+      currentEffort = message.meta.effort ?? null;
+      logger.debug(`[${opts.agentName}] Requested ACP effort: ${currentEffort ?? 'null'}`);
+    }
 
     messageQueue.push(message.content.text, {
       permissionMode: currentPermissionMode,
       model: currentModel,
+      effort: currentEffort,
     });
   });
   session.keepAlive(thinking, 'remote');
@@ -892,6 +934,8 @@ export async function runAcp(opts: {
   try {
     const started = await backend.startSession();
     acpSessionId = started.sessionId;
+    if (opts.initialModel) await switchModelIfRequested(opts.initialModel);
+    if (opts.initialEffort) await switchEffortIfRequested(opts.initialEffort);
     if (verbose) {
       if (!sawSlashCommands) {
         logAcp('muted', `Outgoing slash commands from ${opts.agentName}: not reported yet`);
@@ -931,6 +975,9 @@ export async function runAcp(opts: {
         }
         if (typeof batch.mode.model === 'string' && batch.mode.model.length > 0) {
           await switchModelIfRequested(batch.mode.model);
+        }
+        if (typeof batch.mode.effort === 'string' && batch.mode.effort.length > 0) {
+          await switchEffortIfRequested(batch.mode.effort);
         }
         await backend.sendPrompt(acpSessionId, batch.message);
         await turnEnded;

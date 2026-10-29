@@ -200,6 +200,7 @@ public struct MachineDetailsModel: Equatable, Sendable {
         public var codex: Bool
         public var gemini: Bool
         public var openclaw: Bool
+        public var kiro: Bool? = nil
         /// Only daemons that know Happy Agent report it.
         public var rig: Bool?
         public var detectedAt: Int64
@@ -247,6 +248,7 @@ public struct MachineDetailsModel: Equatable, Sendable {
                 codex: SessionInfoModel.truthy(cli["codex"]),
                 gemini: SessionInfoModel.truthy(cli["gemini"]),
                 openclaw: SessionInfoModel.truthy(cli["openclaw"]),
+                kiro: cli["kiro"] == nil ? nil : SessionInfoModel.truthy(cli["kiro"]),
                 rig: rig == nil ? nil : SessionInfoModel.truthy(rig),
                 detectedAt: Int64(cli["detectedAt"]?.numberValue ?? 0)
             )

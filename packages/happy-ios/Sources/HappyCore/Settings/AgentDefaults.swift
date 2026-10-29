@@ -11,6 +11,7 @@ public enum AgentDefaults {
         case gemini
         case openclaw
         case agy
+        case kiro
 
         /// utils/harnessCatalog.ts `HARNESS_NAMES`.
         public var name: String {
@@ -20,6 +21,7 @@ public enum AgentDefaults {
             case .gemini: "Gemini"
             case .openclaw: "OpenClaw"
             case .agy: "Antigravity"
+            case .kiro: "Kiro"
             }
         }
 
@@ -78,6 +80,7 @@ public enum AgentDefaults {
         case .gemini: Config(permissionMode: "default", modelMode: "gemini-2.5-pro", effortLevel: nil)
         case .openclaw: Config(permissionMode: "default", modelMode: "default", effortLevel: nil)
         case .agy: Config(permissionMode: "default", modelMode: "Gemini 3.8 Flash", effortLevel: "medium")
+        case .kiro: Config(permissionMode: "autonomous", modelMode: "default", effortLevel: nil)
         }
     }
 
@@ -202,6 +205,8 @@ public enum AgentDefaults {
                 Option("default", "Default", "agy sandbox"),
                 Option("bypassPermissions", "Yolo", "never asks"),
             ]
+        case .kiro:
+            [Option("autonomous", "Autonomous", "tools are approved locally")]
         }
     }
 
@@ -244,6 +249,8 @@ public enum AgentDefaults {
                 Option("Claude Opus 4.6 (Thinking)", "Claude Opus 4.6 (Thinking)"),
                 Option("GPT-OSS 120B (Medium)", "GPT-OSS 120B (Medium)"),
             ]
+        case .kiro:
+            [Option("default", "Default")]
         }
     }
 
@@ -252,7 +259,7 @@ public enum AgentDefaults {
     public static func modelModes(_ agent: Agent, configured: String?) -> [Option] {
         var models = hardcodedModels(agent)
         let key = agent == .claude ? configured.map { retiredClaudeModelModes[$0] ?? $0 } : configured
-        if agent == .claude || agent == .codex || agent == .agy,
+        if agent == .claude || agent == .codex || agent == .agy || agent == .kiro,
            let key, key != "default", !models.contains(where: { $0.key == key }) {
             let name = agent == .claude && key == "claude-sonnet-5" ? "Sonnet 5" : key
             models.append(Option(key, name, agent == .codex ? "custom model" : "saved model"))
@@ -279,7 +286,7 @@ public enum AgentDefaults {
             keys = byModel[model] ?? ["low", "medium", "high", "xhigh"]
         case .agy:
             keys = model == "Gemini 3.8 Flash" ? ["low", "medium", "high"] : []
-        case .gemini, .openclaw:
+        case .gemini, .openclaw, .kiro:
             keys = []
         }
         return keys.map { Option($0, $0 == "xhigh" ? "xHigh" : $0.prefix(1).uppercased() + $0.dropFirst()) }

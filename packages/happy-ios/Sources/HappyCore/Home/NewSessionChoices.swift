@@ -48,6 +48,8 @@ public struct NewSessionChoices: Equatable, Sendable {
         public var agentDefaultOverrides: [String: JSONValue]
         /// `git worktree list` on the selected computer, when it is asked.
         public var gitWorktrees: [Worktrees.Entry]
+        /// Machine-key encrypted catalog for the selected CLI harness.
+        public var agentModelCatalog: AgentModelCatalog?
 
         public init(
             draft: NewSessionDraft,
@@ -56,7 +58,8 @@ public struct NewSessionChoices: Equatable, Sendable {
             sessions: [SessionRecord],
             projectNames: [String: String] = [:],
             agentDefaultOverrides: [String: JSONValue] = [:],
-            gitWorktrees: [Worktrees.Entry] = []
+            gitWorktrees: [Worktrees.Entry] = [],
+            agentModelCatalog: AgentModelCatalog? = nil
         ) {
             self.draft = draft
             self.createsBot = createsBot
@@ -65,6 +68,7 @@ public struct NewSessionChoices: Equatable, Sendable {
             self.projectNames = projectNames
             self.agentDefaultOverrides = agentDefaultOverrides
             self.gitWorktrees = gitWorktrees
+            self.agentModelCatalog = agentModelCatalog
         }
 
         public init(draft: NewSessionDraft, createsBot: Bool, snapshot: HomeSnapshot, gitWorktrees: [Worktrees.Entry] = []) {
@@ -254,7 +258,8 @@ public struct NewSessionChoices: Equatable, Sendable {
             rig: rigCreation,
             picks: ComposerPicks(permissionMode: draft.permissionMode, modelMode: draft.modelMode, effortLevel: draft.effortLevel),
             overrides: inputs.agentDefaultOverrides,
-            cliVersion: cliVersion
+            cliVersion: cliVersion,
+            catalog: inputs.agentModelCatalog
         )
         permissionOptions = modes.permissions
         modelOptions = modes.models
@@ -293,7 +298,8 @@ public struct NewSessionChoices: Equatable, Sendable {
         rig: RigSessionCreation?,
         picks: ComposerPicks,
         overrides: [String: JSONValue],
-        cliVersion: String?
+        cliVersion: String?,
+        catalog: AgentModelCatalog? = nil
     ) -> Modes {
         if let rig {
             let models = rig.models.map {
@@ -312,6 +318,35 @@ public struct NewSessionChoices: Equatable, Sendable {
                 permission: resolve(permissions, [picks.permissionMode, rig.defaultPermissionMode]),
                 model: model,
                 effort: resolve(efforts, [picks.effortLevel, effortDefault])
+            )
+        }
+        if let catalog, catalog.agent == agent.rawValue {
+            let defaults = AgentDefaults.resolve(overrides, AgentDefaults.Agent(flavor: agent.rawValue), cliVersion: cliVersion)
+            var models = catalog.models.map {
+                Option(key: $0.id, name: $0.name, description: $0.description)
+            }
+            let selectedKey = picks.modelMode ?? defaults.modelMode
+            if !selectedKey.isEmpty, selectedKey != "default", !models.contains(where: { $0.key == selectedKey }) {
+                models.append(Option(
+                    key: selectedKey,
+                    name: selectedKey,
+                    description: agent == .claude ? "saved model" : "Unavailable on this computer",
+                    isDisabled: agent == .codex || agent == .kiro
+                ))
+            }
+            let permissions = AgentDefaults.permissionModes(AgentDefaults.Agent(flavor: agent.rawValue)).map {
+                Option(key: $0.key, name: $0.name, description: $0.description)
+            }
+            let model = resolve(models, [picks.modelMode, defaults.modelMode, catalog.models.first(where: \.isDefault)?.id])
+            let efforts = catalog.effort?.options.map { Option(key: $0.id, name: $0.name) } ?? []
+            return Modes(
+                permissions: permissions,
+                models: models,
+                modelSections: [Section(key: "__models__", title: nil, options: models)],
+                efforts: efforts,
+                permission: resolve(permissions, [picks.permissionMode, defaults.permissionMode]),
+                model: model,
+                effort: resolve(efforts, [picks.effortLevel, catalog.effort?.defaultOptionId, defaults.effortLevel])
             )
         }
         let modes = ComposerModes.newSession(

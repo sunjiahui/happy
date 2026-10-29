@@ -464,6 +464,7 @@ public enum ModelModeOptions {
         case "gemini": .gemini
         case "openclaw": .openclaw
         case "agy": .agy
+        case "kiro": .kiro
         default: .claude
         }
     }
@@ -480,7 +481,7 @@ public enum ModelModeOptions {
             } else {
                 ("openai", "OpenAI")
             }
-        case .gemini, .openclaw: nil
+        case .gemini, .openclaw, .kiro: nil
         }
     }
 

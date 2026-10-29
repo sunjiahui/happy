@@ -112,6 +112,7 @@ public struct NewSessionScreenModel: Equatable, Sendable {
         "claude": "claude code",
         "codex": "codex",
         "agy": "antigravity",
+        "kiro": "kiro",
         "rig": "happy",
     ]
 
@@ -249,7 +250,7 @@ public struct NewSessionScreenModel: Equatable, Sendable {
         }
         self.settings = settings
 
-        canSend = draft.selectedMachineId != nil && agentMachine?.active == true && !isStarting
+        canSend = draft.selectedMachineId != nil && agentMachine?.active == true && !isStarting && choices.currentModel?.isDisabled != true
     }
 
     /// utils/newSessionModeSelection.ts `resolvePermissionStyle`'s icon.

@@ -148,6 +148,8 @@ export const MachineMetadataSchema = z.object({
     // Optional so metadata written by a CLI predating agy detection still
     // matches this shape. detectCLIAvailability always reports it.
     agy: z.boolean().optional(),
+    // Optional so clients remain compatible with daemons predating Kiro.
+    kiro: z.boolean().optional(),
     detectedAt: z.number(),
   }).optional(),
   resumeSupport: z.object({

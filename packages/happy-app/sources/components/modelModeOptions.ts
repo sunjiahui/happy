@@ -217,7 +217,7 @@ export function includeConfiguredModel(
     const isClaude = flavor !== 'rig' && normalizeAgentKey(flavor) === 'claude';
     const key = retireModelMode(flavor, configuredModelKey);
     if (
-        (flavor !== 'codex' && flavor !== 'agy' && !isClaude)
+        (flavor !== 'codex' && flavor !== 'agy' && flavor !== 'kiro' && !isClaude)
         || !key
         || key === 'default'
         || models.some((model) => model.key === key)
@@ -345,6 +345,9 @@ export function getHardcodedPermissionModes(flavor: AgentFlavor, translate: Tran
     if (flavor === 'agy') {
         return getAgyPermissionModes(translate);
     }
+    if (flavor === 'kiro') {
+        return [{ key: 'autonomous', name: 'Autonomous', description: 'Kiro tools are approved locally' }];
+    }
     return getClaudePermissionModes(translate);
 }
 
@@ -378,6 +381,9 @@ export function getHardcodedModelModes(flavor: AgentFlavor, _translate: Translat
     }
     if (flavor === 'agy') {
         return getAgyModelModes();
+    }
+    if (flavor === 'kiro') {
+        return [{ key: 'default', name: 'Default', description: null }];
     }
     return getClaudeModelModes();
 }
@@ -479,7 +485,7 @@ export function getAvailablePermissionModes(
         }
         return modes;
     }
-    if (flavor === 'claude' || flavor === 'codex' || flavor === 'openclaw' || flavor === 'agy') {
+    if (flavor === 'claude' || flavor === 'codex' || flavor === 'openclaw' || flavor === 'agy' || flavor === 'kiro') {
         // metadata.version is the happy-cli version running this session
         // (createSessionMetadata.ts), which is what has to parse the mode.
         return hackModes(filterPermissionModesForCli(

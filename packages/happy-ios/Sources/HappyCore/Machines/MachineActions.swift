@@ -66,6 +66,52 @@ public struct MachineActions: Sendable {
         } catch { return MachineOperationResult(success: false, message: opsError(error)) }
     }
 
+    /// Lists account-visible models through the machine-key encrypted RPC.
+    public func machineListAgentModels(
+        machineId: String,
+        agent: String,
+        workingDirectory: String? = nil,
+        forceRefresh: Bool = false
+    ) async -> AgentModelCatalogResult {
+        do {
+            var params: [String: JSONValue] = ["agent": .string(agent)]
+            params.set("workingDirectory", workingDirectory)
+            if forceRefresh { params["forceRefresh"] = .bool(true) }
+            let result = try await call(machineId: machineId, method: "list-agent-models", params: .object(params))
+            guard result["ok"]?.boolValue == true, let value = result["catalog"] else {
+                return .error(
+                    code: result["error"]?["code"]?.stringValue ?? "RPC_UNAVAILABLE",
+                    retryable: result["error"]?["retryable"]?.boolValue ?? true
+                )
+            }
+            guard let agent = value["agent"]?.stringValue,
+                  let source = value["source"]?.stringValue,
+                  let fetchedAt = value["fetchedAt"]?.numberValue,
+                  fetchedAt.isFinite, fetchedAt >= 0, fetchedAt < Double(Int64.max),
+                  let modelValues = value["models"]?.arrayValue else {
+                return .error(code: "MALFORMED_RESPONSE", retryable: true)
+            }
+            let models = modelValues.compactMap { row -> AgentModelCatalog.Model? in
+                guard let id = row["id"]?.stringValue, !id.isEmpty,
+                      let name = row["name"]?.stringValue, !name.isEmpty else { return nil }
+                return .init(id: id, name: name, description: row["description"]?.stringValue, isDefault: row["isDefault"]?.boolValue == true)
+            }
+            guard !models.isEmpty else { return .error(code: "EMPTY_CATALOG", retryable: true) }
+            let effort = value["effort"].flatMap { effort -> AgentModelCatalog.Effort? in
+                guard let selector = effort["selectorId"]?.stringValue,
+                      let values = effort["options"]?.arrayValue else { return nil }
+                let options = values.compactMap { option -> AgentModelCatalog.Option? in
+                    guard let id = option["id"]?.stringValue, let name = option["name"]?.stringValue else { return nil }
+                    return .init(id: id, name: name)
+                }
+                return .init(selectorId: selector, options: options, defaultOptionId: effort["defaultOptionId"]?.stringValue)
+            }
+            return .success(.init(agent: agent, source: source, fetchedAt: Int64(fetchedAt), models: models, effort: effort))
+        } catch {
+            return .error(code: "RPC_UNAVAILABLE", retryable: true)
+        }
+    }
+
     /// Ports ops.ts machineStopDaemon.
     public func machineStopDaemon(machineId: String) async throws -> MachineStopDaemonResult {
         try opsDecode(await call(machineId: machineId, method: "stop-daemon", params: .object([:])))

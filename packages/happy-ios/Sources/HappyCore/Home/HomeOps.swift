@@ -10,12 +10,19 @@ public protocol HomeOps: Sendable {
     func machineSpawnNewSession(options: SpawnSessionOptions) async -> SpawnSessionResult
     /// ops.ts `machineResumeSession`.
     func machineResumeSession(machineId: String, sessionId: String, model: String?, permissionMode: String?) async -> SpawnSessionResult
+    func machineListAgentModels(machineId: String, agent: String, workingDirectory: String?, forceRefresh: Bool) async -> AgentModelCatalogResult
     /// ops.ts `forkAndSpawn`.
     func forkAndSpawn(source: ForkSource, options: ForkOptions) async -> SpawnSessionResult
     /// ops.ts `machineStopSession`.
     func machineStopSession(machineId: String, sessionId: String) async -> MachineOperationResult
     /// ops.ts `machineBash`.
     func machineBash(machineId: String, command: String, cwd: String) async throws -> SessionBashResponse
+}
+
+public extension HomeOps {
+    func machineListAgentModels(machineId: String, agent: String, workingDirectory: String?, forceRefresh: Bool) async -> AgentModelCatalogResult {
+        .error(code: "RPC_UNAVAILABLE", retryable: true)
+    }
 }
 
 extension MachineActions: HomeOps {}

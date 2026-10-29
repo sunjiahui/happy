@@ -33,6 +33,7 @@ import {
     forkCodexThread,
     listCodexRewindPoints,
 } from '@/codex/codexThreadFork';
+import { listAgentModels } from '@/agentModelCatalog';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -223,6 +224,10 @@ export class ApiMachineClient {
 
             logger.debug(`[API MACHINE] Stopped session ${sessionId}`);
             return { message: 'Session stopped' };
+        });
+
+        this.rpcHandlerManager.registerHandler('list-agent-models', async (params: unknown) => {
+            return await listAgentModels(params);
         });
 
         // Register Claude session fork handlers (used by app-side fork /
