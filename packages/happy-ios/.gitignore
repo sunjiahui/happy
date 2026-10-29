@@ -10,3 +10,5 @@ xtool/
 DerivedData/
 .build-mac/
 .build-ios/
+# Unsigned SideStore IPA produced by scripts/build-sidestore-ipa.sh
+Happy-SideStore.ipa
